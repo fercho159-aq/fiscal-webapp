@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SintesisRender } from "@/components/sintesis-render";
 import { Send, Loader2, User, Bot } from "lucide-react";
 
 interface Message {
@@ -122,9 +123,15 @@ export function Chat({ casoId, initialMessages = [], placeholder }: Props) {
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed">
-                  {m.contenido || (m.rol === "assistant" && streaming ? "..." : "")}
-                </pre>
+                {m.rol === "assistant" ? (
+                  m.contenido ? (
+                    <SintesisRender markdown={m.contenido} />
+                  ) : streaming ? (
+                    <span className="text-sm text-muted-foreground">...</span>
+                  ) : null
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.contenido}</p>
+                )}
               </div>
             </div>
           </Card>

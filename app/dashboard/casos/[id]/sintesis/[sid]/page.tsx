@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SintesisRender } from "@/components/sintesis-render";
 import { ArrowLeft, Download, AlertTriangle, Clock } from "lucide-react";
 import { formatMoney, formatDateMX, diasHabilesEntre } from "@/lib/utils";
 
@@ -75,7 +76,7 @@ export default async function SintesisPage({
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
             <div>
               <div className="font-medium text-destructive">
-                ⚠️ Plazo urgente: {formatDateMX(fechaPlazo)} ({diasParaPlazo}d hábiles)
+                Plazo urgente: {formatDateMX(fechaPlazo)} ({diasParaPlazo}d hábiles)
               </div>
               {data.proximoPlazo?.accion && (
                 <div className="text-sm mt-1">{data.proximoPlazo.accion}</div>
@@ -135,9 +136,7 @@ export default async function SintesisPage({
           <CardTitle className="text-base">Análisis completo</CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed">
-            {sintesis.contenidoMarkdown}
-          </pre>
+          <SintesisRender markdown={sintesis.contenidoMarkdown} />
         </CardContent>
       </Card>
     </div>

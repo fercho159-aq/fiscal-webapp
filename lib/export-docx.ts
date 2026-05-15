@@ -12,6 +12,8 @@ import {
   BorderStyle,
 } from "docx";
 
+const FONT = "Montserrat";
+
 interface ExportInput {
   membreteLine1?: string;
   membreteLine2?: string;
@@ -226,6 +228,17 @@ export async function generarDocxSintesis(input: ExportInput): Promise<Buffer> {
     creator: "fiscal-webapp",
     title: input.titulo,
     description: "Síntesis fiscal generada",
+    styles: {
+      default: {
+        document: {
+          run: { font: FONT, size: 22 },
+        },
+        heading1: { run: { font: FONT, size: 32, bold: true } },
+        heading2: { run: { font: FONT, size: 28, bold: true } },
+        heading3: { run: { font: FONT, size: 24, bold: true } },
+        title: { run: { font: FONT, size: 36, bold: true } },
+      },
+    },
     sections: [
       {
         properties: {},
