@@ -2,11 +2,20 @@ import OpenAI from "openai";
 
 let client: OpenAI | null = null;
 
+function isKeyValid(key: string | undefined): key is string {
+  return !!key && key.startsWith("sk-") && !key.includes("xxx") && key.length > 12;
+}
+
+export function embeddingsEnabled(): boolean {
+  return isKeyValid(process.env.OPENAI_API_KEY);
+}
+
 function getClient(): OpenAI {
+  if (!embeddingsEnabled()) {
+    throw new Error("OPENAI_API_KEY no configurada — RAG deshabilitado");
+  }
   if (!client) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY no configurada");
-    client = new OpenAI({ apiKey });
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
   }
   return client;
 }

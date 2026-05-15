@@ -1,4 +1,4 @@
-import { embed } from "./embeddings";
+import { embed, embeddingsEnabled } from "./embeddings";
 import { searchCorpus, type CorpusHit, type SearchFilters } from "./qdrant";
 
 export interface RagContext {
@@ -15,14 +15,31 @@ export async function retrieveContext(
   query: string,
   options: { topK?: number; filters?: SearchFilters } = {}
 ): Promise<RagContext> {
+  // Si OpenAI no está configurado, salta RAG silenciosamente
+  if (!embeddingsEnabled()) {
+    return {
+      query,
+      hits: [],
+      contextoMarkdown: "_(RAG deshabilitado: OPENAI_API_KEY no configurada)_",
+    };
+  }
+
   const { topK = 8, filters } = options;
   const queryTrunc = query.length > 2000 ? query.slice(0, 1500) + "\n...\n" + query.slice(-300) : query;
 
-  const vector = await embed(queryTrunc);
-  const hits = await searchCorpus(vector, topK, filters);
-  const contextoMarkdown = formatContextMarkdown(hits);
-
-  return { query, hits, contextoMarkdown };
+  try {
+    const vector = await embed(queryTrunc);
+    const hits = await searchCorpus(vector, topK, filters);
+    const contextoMarkdown = formatContextMarkdown(hits);
+    return { query, hits, contextoMarkdown };
+  } catch (e) {
+    console.warn("RAG failed, continuando sin contexto:", e instanceof Error ? e.message : e);
+    return {
+      query,
+      hits: [],
+      contextoMarkdown: "_(RAG no disponible en esta consulta)_",
+    };
+  }
 }
 
 function formatContextMarkdown(hits: CorpusHit[]): string {

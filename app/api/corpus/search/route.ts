@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { embed } from "@/lib/embeddings";
+import { embed, embeddingsEnabled } from "@/lib/embeddings";
 import { searchCorpus } from "@/lib/qdrant";
 import { z } from "zod";
 
@@ -21,6 +21,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid", details: parsed.error.flatten() }, { status: 400 });
   }
   const { query, topK, abreviaturas, tipos } = parsed.data;
+
+  if (!embeddingsEnabled()) {
+    return NextResponse.json({
+      hits: [],
+      warning: "OPENAI_API_KEY no configurada — búsqueda corpus deshabilitada",
+    });
+  }
 
   try {
     const vec = await embed(query);
