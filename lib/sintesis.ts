@@ -3,6 +3,7 @@ import { downloadObject } from "./s3";
 import { extractPdfText, detectFields } from "./pdf";
 import { runOcr } from "./ocr";
 import { retrieveContext, inferFilters } from "./rag";
+import { stripMarkdown } from "./strip-markdown";
 import { getLLM, type LLMTier } from "./llm";
 import { FISCAL_SYSTEM_PROMPT } from "./llm/system-prompt";
 import type { Prisma, TipoSintesis } from "@prisma/client";
@@ -163,14 +164,18 @@ export async function generarSintesis(req: SintesisRequest): Promise<SintesisRes
     },
   });
 
-  // 10. Actualizar caso con datos extraídos si están vacíos
+  // 10. Actualizar caso con datos extraídos si están vacíos (limpio markdown antes de persistir)
+  const estadoLimpio = estructurada.estadoProcesal
+    ? stripMarkdown(estructurada.estadoProcesal).slice(0, 500)
+    : undefined;
+
   await prisma.caso.update({
     where: { id: caso.id },
     data: {
       montoTotal: !caso.montoTotal && estructurada.adeudoTotal
         ? estructurada.adeudoTotal
         : undefined,
-      estadoProcesal: !caso.estadoProcesal ? estructurada.estadoProcesal : undefined,
+      estadoProcesal: !caso.estadoProcesal ? estadoLimpio : undefined,
       plazoProximo: !caso.plazoProximo && estructurada.proximoPlazo?.fecha
         ? new Date(estructurada.proximoPlazo.fecha)
         : undefined,
@@ -232,7 +237,7 @@ ${args.contextoCorpus}
 
 ${instrucciones[args.tipo]}
 
-Trabaja con precisión quirúrgica. Cita siempre artículo y ley. Marca plazos urgentes con ⚠️ y fecha exacta. Si detectas vicio formal o sustantivo, indícalo explícito con la causal de nulidad aplicable.`;
+Trabaja con precisión quirúrgica. Cita siempre artículo y ley. Marca plazos urgentes con **PLAZO URGENTE:** en mayúsculas y fecha exacta. Si detectas vicio formal o sustantivo, indícalo explícito con la causal de nulidad aplicable. NO uses emojis ni pictogramas.`;
 }
 
 function parsearSintesis(

@@ -6,9 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { EmptyState } from "@/components/empty-state";
-import { ArrowLeft, Upload, MessageSquare, FileText, Sparkles, AlertTriangle, Clock } from "lucide-react";
+import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
+import {
+  ArrowLeft,
+  Upload,
+  MessageSquare,
+  FileText,
+  Sparkles,
+  AlertTriangle,
+  Eye,
+} from "lucide-react";
 import { formatMoney, formatDateMX, diasHabilesEntre } from "@/lib/utils";
+import { stripMarkdown, stripMarkdownShort } from "@/lib/strip-markdown";
 
 const TIPO_LABEL: Record<string, string> = {
   OFICIO_SAT: "Oficio SAT",
@@ -23,6 +32,18 @@ const TIPO_LABEL: Record<string, string> = {
   OTRO: "Otro",
 };
 
+const TIPO_SINTESIS_LABEL: Record<string, string> = {
+  EJECUTIVA: "Ejecutiva",
+  PROFUNDA: "Profunda",
+  ESTRATEGIA_DEFENSA: "Estrategia defensa",
+};
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
 export default async function CasoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
@@ -32,13 +53,12 @@ export default async function CasoPage({ params }: { params: Promise<{ id: strin
     where: { id, userId: session.user.id },
     include: {
       documentos: { orderBy: { createdAt: "desc" } },
-      sintesis: { orderBy: { generadaEn: "desc" }, take: 3 },
+      sintesis: { orderBy: { generadaEn: "desc" } },
       _count: { select: { mensajes: true } },
     },
   });
   if (!caso) notFound();
 
-  const sintesisReciente = caso.sintesis[0];
   const now = new Date();
   const diasParaPlazo =
     caso.plazoProximo && caso.plazoProximo > now ? diasHabilesEntre(now, caso.plazoProximo) : null;
@@ -102,100 +122,164 @@ export default async function CasoPage({ params }: { params: Promise<{ id: strin
           value={caso.plazoProximo ? formatDateMX(caso.plazoProximo) : "—"}
           danger={plazoUrgente}
         />
-        <Stat label="Estado procesal" value={caso.estadoProcesal ?? "Sin definir"} />
+        <Stat
+          label="Estado procesal"
+          value={caso.estadoProcesal ? stripMarkdown(caso.estadoProcesal) : "Sin definir"}
+        />
       </div>
 
-      {/* 2 columnas: docs + analisis */}
-      <div className="grid gap-4 md:grid-cols-2 mb-8">
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-eyebrow mb-0.5">Documentos</p>
-                <h2 className="text-base font-semibold">{caso.documentos.length} archivos</h2>
-              </div>
-              <Button size="sm" asChild>
-                <Link href={`/dashboard/casos/${caso.id}/upload`}>
-                  <Upload className="h-4 w-4" />
-                  Subir
-                </Link>
-              </Button>
-            </div>
-            {caso.documentos.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">
-                Sin documentos. Sube oficios, acuerdos, resoluciones.
+      {/* DOCUMENTOS */}
+      <section className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-eyebrow mb-0.5">Documentos del expediente</p>
+            <h2 className="text-xl font-semibold tracking-tight">
+              {caso.documentos.length} archivo{caso.documentos.length !== 1 ? "s" : ""}
+            </h2>
+          </div>
+          <Button size="sm" asChild>
+            <Link href={`/dashboard/casos/${caso.id}/upload`}>
+              <Upload className="h-4 w-4" />
+              Subir documento
+            </Link>
+          </Button>
+        </div>
+
+        {caso.documentos.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                Sin documentos. Sube oficios, acuerdos, resoluciones para analizar.
               </p>
-            ) : (
-              <ul className="space-y-2 -mx-2">
-                {caso.documentos.slice(0, 5).map((doc) => (
-                  <li
-                    key={doc.id}
-                    className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-secondary/50 transition-colors text-sm"
-                  >
-                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="flex-1 truncate" title={doc.nombre}>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <ul className="divide-y divide-border">
+              {caso.documentos.map((doc) => (
+                <li
+                  key={doc.id}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
+                >
+                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate" title={doc.nombre}>
                       {doc.nombre}
-                    </span>
-                    <Badge variant="muted" size="sm">
-                      {TIPO_LABEL[doc.tipoDocumento] ?? doc.tipoDocumento}
-                    </Badge>
-                  </li>
-                ))}
-                {caso.documentos.length > 5 && (
-                  <li className="px-2 text-xs text-muted-foreground">
-                    + {caso.documentos.length - 5} documentos más
-                  </li>
-                )}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                      <Badge variant="muted" size="sm">
+                        {TIPO_LABEL[doc.tipoDocumento] ?? doc.tipoDocumento}
+                      </Badge>
+                      <span>·</span>
+                      <span>{formatBytes(doc.tamanoBytes)}</span>
+                      <span>·</span>
+                      <span>{formatDateMX(doc.createdAt)}</span>
+                      {doc.ocrAplicado && (
+                        <>
+                          <span>·</span>
+                          <Badge variant="muted" size="sm">OCR</Badge>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      asChild
+                      title="Ver documento"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <a href={`/api/documents/${doc.id}`} target="_blank" rel="noreferrer">
+                        <Eye className="h-4 w-4" />
+                      </a>
+                    </Button>
+                    <ConfirmDeleteButton
+                      endpoint={`/api/documents/${doc.id}`}
+                      itemName="documento"
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+      </section>
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-eyebrow mb-0.5">Análisis</p>
-                <h2 className="text-base font-semibold">
-                  {caso.sintesis.length} síntesis generadas
-                </h2>
-              </div>
-              <Button size="sm" asChild>
-                <Link href={`/dashboard/casos/${caso.id}/analizar`}>
-                  <Sparkles className="h-4 w-4" />
-                  Generar
-                </Link>
-              </Button>
-            </div>
-            {sintesisReciente ? (
-              <div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                  <Badge variant="gold" size="sm">
-                    {sintesisReciente.tipo.replace(/_/g, " ")}
-                  </Badge>
-                  <span>·</span>
-                  <span>{formatDateMX(sintesisReciente.generadaEn)}</span>
-                </div>
-                <p className="text-sm line-clamp-4 text-foreground/80 leading-relaxed mb-3">
-                  {sintesisReciente.contenidoMarkdown
-                    .replace(/[#*`>]/g, "")
-                    .slice(0, 240)}
-                  …
-                </p>
-                <Button size="sm" variant="link" asChild className="px-0 h-auto">
-                  <Link href={`/dashboard/casos/${caso.id}/sintesis/${sintesisReciente.id}`}>
-                    Ver análisis completo →
-                  </Link>
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground py-4">
-                Sin análisis. Sube documentos y genera la primera síntesis.
+      {/* SÍNTESIS */}
+      <section className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-eyebrow mb-0.5">Análisis generados</p>
+            <h2 className="text-xl font-semibold tracking-tight">
+              {caso.sintesis.length} síntesis
+            </h2>
+          </div>
+          <Button size="sm" asChild>
+            <Link href={`/dashboard/casos/${caso.id}/analizar`}>
+              <Sparkles className="h-4 w-4" />
+              Generar análisis
+            </Link>
+          </Button>
+        </div>
+
+        {caso.sintesis.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                Sin síntesis. Sube documentos y genera el primer análisis.
               </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {caso.sintesis.map((s) => (
+              <Card
+                key={s.id}
+                className="transition-shadow hover:shadow-md"
+              >
+                <CardContent className="p-4 flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <Badge variant="gold" size="sm">
+                        {TIPO_SINTESIS_LABEL[s.tipo] ?? s.tipo}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDateMX(s.generadaEn)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">·</span>
+                      <span className="text-xs font-mono text-muted-foreground">
+                        {s.modelo}
+                      </span>
+                    </div>
+                    <p className="text-sm line-clamp-2 text-foreground/80 leading-relaxed">
+                      {stripMarkdownShort(s.contenidoMarkdown, 220)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Button variant="ghost" size="sm" asChild className="text-xs">
+                      <Link href={`/dashboard/casos/${caso.id}/sintesis/${s.id}`}>
+                        <Eye className="h-3.5 w-3.5" />
+                        Ver
+                      </Link>
+                    </Button>
+                    <ConfirmDeleteButton
+                      endpoint={`/api/sintesis/${s.id}`}
+                      itemName="síntesis"
+                      size="sm"
+                      label="Eliminar"
+                      className="text-xs justify-start"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
 
       <Separator label="Acciones" className="mb-4" />
 
@@ -211,19 +295,22 @@ export default async function CasoPage({ params }: { params: Promise<{ id: strin
             )}
           </Link>
         </Button>
-        {caso.sintesis.length > 1 && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={`/dashboard/casos/${caso.id}/analizar`}>
-              Ver historial de análisis ({caso.sintesis.length})
-            </Link>
-          </Button>
-        )}
       </div>
     </div>
   );
 }
 
-function Stat({ label, value, mono = false, danger = false }: { label: string; value: string; mono?: boolean; danger?: boolean }) {
+function Stat({
+  label,
+  value,
+  mono = false,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  danger?: boolean;
+}) {
   return (
     <Card className={danger ? "border-destructive/30" : ""}>
       <CardContent className="p-4">
