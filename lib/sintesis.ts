@@ -50,40 +50,64 @@ export async function generarSintesis(req: SintesisRequest): Promise<SintesisRes
 
   // 2. Extraer texto de cada documento (cache en textoExtraido)
   const docsConTexto: Array<{ nombre: string; tipo: string; texto: string }> = [];
+  const docsFallidos: Array<{ nombre: string; error: string }> = [];
+
   for (const doc of caso.documentos) {
     let texto = doc.textoExtraido ?? "";
     if (!texto && doc.mimeType === "application/pdf") {
-      const buffer = await downloadObject(doc.storageKey);
-      const parsed = await extractPdfText(buffer);
-      texto = parsed.text;
-      let usedOcr = false;
-      if (parsed.isScanned) {
+      try {
+        const buffer = await downloadObject(doc.storageKey);
+        let parsed: { text: string; isScanned: boolean } = { text: "", isScanned: true };
         try {
-          const ocrResult = await runOcr(buffer, doc.nombre);
-          if (ocrResult.text.length > texto.length) {
-            texto = ocrResult.text;
-            usedOcr = true;
-          }
+          parsed = await extractPdfText(buffer);
+          texto = parsed.text;
         } catch (e) {
-          console.error("OCR fallback failed", e);
+          console.warn(`pdf-parse falló para ${doc.nombre}: ${e instanceof Error ? e.message : e}. Intentando OCR.`);
         }
+        let usedOcr = false;
+        if (parsed.isScanned || texto.length < 200) {
+          try {
+            const ocrResult = await runOcr(buffer, doc.nombre);
+            if (ocrResult.text.length > texto.length) {
+              texto = ocrResult.text;
+              usedOcr = true;
+            }
+          } catch (e) {
+            console.error(`OCR fallback failed para ${doc.nombre}:`, e);
+          }
+        }
+        if (!texto) {
+          docsFallidos.push({ nombre: doc.nombre, error: "PDF ilegible (pdf-parse + OCR fallaron)" });
+          continue;
+        }
+        const detectados = detectFields(texto);
+        await prisma.documento.update({
+          where: { id: doc.id },
+          data: {
+            textoExtraido: texto,
+            ocrAplicado: usedOcr,
+            metadatos: detectados as unknown as Prisma.InputJsonValue,
+          },
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`Error procesando ${doc.nombre}:`, msg);
+        docsFallidos.push({ nombre: doc.nombre, error: msg });
+        continue;
       }
-      const detectados = detectFields(texto);
-      await prisma.documento.update({
-        where: { id: doc.id },
-        data: {
-          textoExtraido: texto,
-          ocrAplicado: usedOcr,
-          metadatos: detectados as unknown as Prisma.InputJsonValue,
-        },
-      });
     }
     if (texto) {
       docsConTexto.push({ nombre: doc.nombre, tipo: doc.tipoDocumento, texto });
     }
   }
+
   if (docsConTexto.length === 0) {
-    throw new Error("ningún documento legible — posiblemente requieren OCR");
+    const detalles = docsFallidos.map((d) => `${d.nombre}: ${d.error}`).join("; ");
+    throw new Error(`ningún documento legible. ${detalles}`);
+  }
+
+  if (docsFallidos.length > 0) {
+    console.warn(`Continuando análisis con ${docsConTexto.length}/${caso.documentos.length} docs. Fallidos: ${docsFallidos.map((d) => d.nombre).join(", ")}`);
   }
 
   // 3. Consolidar texto para RAG
