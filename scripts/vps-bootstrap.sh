@@ -21,14 +21,9 @@ if ! docker ps >/dev/null 2>&1; then
   exit 1
 fi
 
-# 2. Detener servicios que bloquean puertos 80/443
-for svc in nginx coturn apache2; do
-  if systemctl is-active --quiet "$svc" 2>/dev/null; then
-    echo "  ⚠ $svc está corriendo y bloquea puertos. Deteniendo..."
-    systemctl stop "$svc"
-    systemctl disable "$svc" 2>/dev/null || true
-  fi
-done
+# 2. Stack convive con NGINX/Traefik existentes. App expone solo 127.0.0.1:3010.
+# Después de bootstrap, ejecutar: bash scripts/setup-nginx.sh
+echo "  Modo de integración: detrás de NGINX (proxy reverse host)"
 
 # 3. Generar .env si no existe
 if [[ ! -f .env ]]; then
@@ -100,16 +95,15 @@ elif command -v dig >/dev/null; then
   fi
 fi
 
-# 6. Verificar puertos libres
-for port in 80 443; do
-  if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-    PROC="$(ss -tlnp 2>/dev/null | grep ":${port} " | head -1)"
-    echo "  ⚠ Puerto $port ocupado:"
-    echo "    $PROC"
-    echo "    Detén el proceso antes de continuar (systemctl stop <svc>)"
-    exit 1
-  fi
-done
+# 6. Verificar puerto local 3010 libre (app expone solo a 127.0.0.1:3010)
+if ss -tlnp 2>/dev/null | grep -q "127.0.0.1:3010 "; then
+  PROC="$(ss -tlnp 2>/dev/null | grep "127.0.0.1:3010 " | head -1)"
+  echo "  ⚠ Puerto 3010 ocupado:"
+  echo "    $PROC"
+  echo "    Cambia el mapeo en docker-compose.yml o detén el proceso."
+  exit 1
+fi
+# NGINX en host maneja 80/443 — no necesitamos esos puertos libres.
 
 # 7. Verificar corpus-metadata
 if [[ ! -d corpus-metadata ]] || [[ -z "$(ls -A corpus-metadata 2>/dev/null)" ]]; then
@@ -147,14 +141,14 @@ echo "✓ VPS bootstrap completo"
 echo ""
 docker compose ps
 echo ""
-echo "Verifica acceso:"
-if [[ "${APP_DOMAIN:-}" =~ ^[0-9.]+$ ]]; then
-  echo "  curl -fsS http://${APP_DOMAIN}/api/health | head -30"
-else
-  echo "  curl -fsS https://${APP_DOMAIN}/api/health | head -30"
-fi
+echo "App escuchando en 127.0.0.1:3010 (interno)."
+echo "Health check directo: curl -fsS http://127.0.0.1:3010/api/health | jq"
 echo ""
-echo "Login: visita el sitio e ingresa con ${SEED_ADMIN_EMAIL:-admin email}"
+echo "SIGUIENTE PASO — exponer al dominio público con NGINX + TLS:"
+echo "  sudo bash scripts/setup-nginx.sh"
+echo ""
+echo "Después podrás visitar: https://${APP_DOMAIN}"
+echo "Login con email + contraseña configurados (ADMIN_EMAIL / ADMIN_PASSWORD en .env)"
 echo ""
 echo "Si tienes corpus catalogado:"
 echo "  bash scripts/download-corpus.sh"
