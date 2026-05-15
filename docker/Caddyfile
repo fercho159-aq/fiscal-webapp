@@ -1,6 +1,13 @@
+# Caddy config — soporta dominio (TLS auto) o IP (HTTP).
+# APP_DOMAIN se inyecta vía env var en docker-compose.
+
 {$APP_DOMAIN} {
     encode gzip zstd
     reverse_proxy app:3000
+
+    request_body {
+        max_size 20MB
+    }
 
     header {
         Strict-Transport-Security "max-age=31536000;"

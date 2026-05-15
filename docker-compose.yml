@@ -10,6 +10,8 @@ services:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
     depends_on:
       - app
     networks:
