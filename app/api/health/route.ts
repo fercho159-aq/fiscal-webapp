@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { qdrant, COLLECTION } from "@/lib/qdrant";
 import { s3 } from "@/lib/s3";
-import { HeadBucketCommand } from "@aws-sdk/client-s3";
+import { HeadBucketCommand, CreateBucketCommand } from "@aws-sdk/client-s3";
 import { ocrHealth } from "@/lib/ocr";
 
 const BUCKET = process.env.S3_BUCKET ?? "fiscal-docs";
@@ -27,7 +27,14 @@ export async function GET() {
   await Promise.all([
     check("postgres", () => prisma.$queryRaw`SELECT 1`),
     check("qdrant", () => qdrant.getCollection(COLLECTION).catch(() => qdrant.getCollections())),
-    check("minio", () => s3.send(new HeadBucketCommand({ Bucket: BUCKET }))),
+    check("minio", async () => {
+      try {
+        await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
+      } catch {
+        // Bucket no existe — intentar crear (idempotente, MinIO startup)
+        await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
+      }
+    }),
     check("ocr", async () => {
       const ok = await ocrHealth();
       if (!ok) throw new Error("ocr down");
