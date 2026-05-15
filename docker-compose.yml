@@ -1,0 +1,110 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: fiscal-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - fiscal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fiscal-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://fiscal:${POSTGRES_PASSWORD}@postgres:5432/fiscal
+      QDRANT_URL: http://qdrant:6333
+      S3_ENDPOINT: http://minio:9000
+      OCR_URL: http://ocr:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      ocr:
+        condition: service_healthy
+    networks:
+      - fiscal
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: fiscal-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fiscal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: fiscal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fiscal"]
+      interval: 5s
+      retries: 10
+    networks:
+      - fiscal
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: fiscal-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - fiscal
+
+  minio:
+    image: minio/minio:latest
+    container_name: fiscal-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      retries: 5
+    networks:
+      - fiscal
+
+  ocr:
+    build:
+      context: ./docker/ocr
+    container_name: fiscal-ocr
+    restart: unless-stopped
+    environment:
+      OCR_MAX_PAGES: 50
+      OCR_DPI: 200
+    networks:
+      - fiscal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 30s
+      retries: 3
+
+networks:
+  fiscal:
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
