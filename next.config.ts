@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   eslint: { ignoreDuringBuilds: true },
   experimental: {
-    serverActions: { bodySizeLimit: "20mb" },
+    serverActions: { bodySizeLimit: "25mb" },
   },
 };
 

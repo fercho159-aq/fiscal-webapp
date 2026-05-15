@@ -164,40 +164,18 @@ function detectTipo(filename: string): string {
 }
 
 async function uploadOne(casoId: string, entry: FileEntry): Promise<void> {
-  // 1. presigned URL
-  const presRes = await fetch("/api/upload/presigned", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      casoId,
-      filename: entry.file.name,
-      mimeType: entry.file.type || "application/pdf",
-      tamanoBytes: entry.file.size,
-    }),
-  });
-  if (!presRes.ok) throw new Error("error presigned");
-  const { uploadUrl, key } = await presRes.json();
+  // Upload directo vía server (evita mixed content con MinIO interno)
+  const form = new FormData();
+  form.append("file", entry.file);
+  form.append("casoId", casoId);
+  form.append("tipoDocumento", entry.tipoDocumento);
 
-  // 2. PUT al S3/MinIO
-  const putRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": entry.file.type || "application/pdf" },
-    body: entry.file,
-  });
-  if (!putRes.ok) throw new Error("error subir");
-
-  // 3. Crear registro Documento
-  const docRes = await fetch("/api/documents", {
+  const res = await fetch("/api/upload/direct", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      casoId,
-      nombre: entry.file.name,
-      storageKey: key,
-      mimeType: entry.file.type || "application/pdf",
-      tamanoBytes: entry.file.size,
-      tipoDocumento: entry.tipoDocumento,
-    }),
+    body: form,
   });
-  if (!docRes.ok) throw new Error("error registrar");
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `error ${res.status}`);
+  }
 }
