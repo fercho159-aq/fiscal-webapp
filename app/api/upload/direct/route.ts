@@ -20,27 +20,27 @@ async function ensureBucket(): Promise<void> {
   }
 }
 
+/**
+ * Upload directo PDF → MinIO sin parsear FormData (bypassa límite Next.js 10MB).
+ * Metadata viaja en query params, body es el binary del PDF.
+ */
 export async function POST(req: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const form = await req.formData();
-  const file = form.get("file");
-  const casoId = String(form.get("casoId") ?? "");
-  const tipoDocumento = String(form.get("tipoDocumento") ?? "OTRO");
+  const url = new URL(req.url);
+  const casoId = url.searchParams.get("casoId") ?? "";
+  const filename = url.searchParams.get("filename") ?? "documento.pdf";
+  const tipoDocumento = url.searchParams.get("tipoDocumento") ?? "OTRO";
+  const mimeType = req.headers.get("content-type") ?? "application/pdf";
+  const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
 
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "no_file" }, { status: 400 });
-  }
-  if (!casoId) {
-    return NextResponse.json({ error: "no_caso" }, { status: 400 });
-  }
-  if (file.size > MAX_BYTES) {
+  if (!casoId) return NextResponse.json({ error: "no_caso" }, { status: 400 });
+  if (!TIPOS.has(tipoDocumento)) return NextResponse.json({ error: "tipo_invalido" }, { status: 400 });
+  if (contentLength <= 0) return NextResponse.json({ error: "empty_body" }, { status: 400 });
+  if (contentLength > MAX_BYTES) {
     return NextResponse.json({ error: "file_too_big", maxBytes: MAX_BYTES }, { status: 413 });
-  }
-  if (!TIPOS.has(tipoDocumento)) {
-    return NextResponse.json({ error: "tipo_invalido" }, { status: 400 });
   }
 
   const caso = await prisma.caso.findFirst({
@@ -51,12 +51,15 @@ export async function POST(req: Request) {
 
   await ensureBucket();
 
-  const filename = file.name || "documento.pdf";
   const key = buildDocumentKey(userId, casoId, filename);
-  const mimeType = file.type || "application/pdf";
 
-  // Stream el archivo a MinIO (desde server interno → MinIO interno, sin pasar por browser)
-  const buffer = Buffer.from(await file.arrayBuffer());
+  // Stream body directo a buffer y luego a MinIO
+  const buffer = Buffer.from(await req.arrayBuffer());
+
+  if (buffer.length === 0) {
+    return NextResponse.json({ error: "empty_body" }, { status: 400 });
+  }
+
   await s3.send(new PutObjectCommand({
     Bucket: BUCKET,
     Key: key,
@@ -65,7 +68,6 @@ export async function POST(req: Request) {
     ContentLength: buffer.length,
   }));
 
-  // Registrar Documento en DB
   const doc = await prisma.documento.create({
     data: {
       casoId,
@@ -81,5 +83,6 @@ export async function POST(req: Request) {
   return NextResponse.json({ id: doc.id, storageKey: key });
 }
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";

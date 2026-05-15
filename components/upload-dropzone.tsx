@@ -48,7 +48,7 @@ export function UploadDropzone({ casoId }: { casoId: string }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { "application/pdf": [".pdf"] },
-    maxSize: 20 * 1024 * 1024,
+    maxSize: 25 * 1024 * 1024,
   });
 
   function setTipo(idx: number, tipo: string) {
@@ -90,7 +90,7 @@ export function UploadDropzone({ casoId }: { casoId: string }) {
         <p className="text-sm font-medium">
           {isDragActive ? "Suelta aquí" : "Arrastra PDFs aquí, o click para seleccionar"}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">Max 20MB por archivo · PDF únicamente</p>
+        <p className="text-xs text-muted-foreground mt-1">Max 25MB por archivo · PDF únicamente</p>
       </div>
 
       {files.length > 0 && (
@@ -164,15 +164,20 @@ function detectTipo(filename: string): string {
 }
 
 async function uploadOne(casoId: string, entry: FileEntry): Promise<void> {
-  // Upload directo vía server (evita mixed content con MinIO interno)
-  const form = new FormData();
-  form.append("file", entry.file);
-  form.append("casoId", casoId);
-  form.append("tipoDocumento", entry.tipoDocumento);
+  // Upload directo: body = binary del PDF, metadata en query params.
+  // Evita FormData parsing (límite 10MB Next.js).
+  const params = new URLSearchParams({
+    casoId,
+    filename: entry.file.name,
+    tipoDocumento: entry.tipoDocumento,
+  });
 
-  const res = await fetch("/api/upload/direct", {
+  const res = await fetch(`/api/upload/direct?${params.toString()}`, {
     method: "POST",
-    body: form,
+    headers: {
+      "Content-Type": entry.file.type || "application/pdf",
+    },
+    body: entry.file,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
