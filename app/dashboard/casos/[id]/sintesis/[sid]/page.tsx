@@ -65,7 +65,7 @@ export default async function SintesisPage({
         <Button variant="outline" size="sm" asChild>
           <a href={`/api/sintesis/${sintesis.id}/export`} download>
             <Download className="h-4 w-4" />
-            Export .docx
+            Export PDF
           </a>
         </Button>
       </div>
