@@ -27,7 +27,6 @@ export class ClaudeProvider implements LLMProvider {
     const resp = await this.client.messages.create({
       model,
       max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature ?? 0.2,
       system: options.systemPrompt,
       messages: options.messages
         .filter((m) => m.role !== "system")
@@ -61,7 +60,6 @@ export class ClaudeProvider implements LLMProvider {
     const stream = this.client.messages.stream({
       model,
       max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature ?? 0.2,
       system: options.systemPrompt,
       messages: options.messages
         .filter((m) => m.role !== "system")
